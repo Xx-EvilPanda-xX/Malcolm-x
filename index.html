@@ -3,31 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Colorful Balls Physics</title>
+    <title>Malcolm's Journey</title>
     <style>
         body {
             margin: 0;
             padding: 0;
             overflow: hidden;
-            background: linear-gradient(to bottom, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
             cursor: crosshair;
+            position: relative;
         }
+        
+        #background {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url('background.png');
+            background-size: cover;
+            background-position: center;
+            z-index: -2;
+        }
+        
         canvas {
             display: block;
+            filter: contrast(1.2) brightness(1.1);
         }
+        
         #info {
             position: absolute;
             top: 10px;
             left: 10px;
-            color: white;
+            color: black;
             font-family: Arial, sans-serif;
             font-size: 14px;
             opacity: 0.8;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+        
+        /* Bloom effect using CSS filters */
+        .bloom {
+            filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.5)) 
+                    drop-shadow(0 0 20px rgba(255, 255, 255, 0.3))
+                    drop-shadow(0 0 30px rgba(255, 255, 255, 0.2));
         }
     </style>
 </head>
 <body>
-    <div id="info">Click anywhere to spawn colorful balls</div>
+    <div id="background"></div>
+    <div id="water-texture" style="position: fixed; bottom: 0; left: 0; width: 100%; height: 30%; background-image: url('water.png'); background-size: cover; opacity: 1.0; z-index: -1;"></div>
+    <div id="info">Click to spawn Malcolm</div>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <script>
@@ -43,9 +68,9 @@
 
         // Create engine
         const engine = Engine.create();
-        engine.world.gravity.y = 0.4; // Reduced from 0.8 for 50% slower falling
+        engine.world.gravity.y = 0.4; // Slower falling
 
-        // Create renderer
+        // Create renderer with bloom effect
         const render = Render.create({
             element: document.body,
             engine: engine,
@@ -53,14 +78,18 @@
                 width: window.innerWidth,
                 height: window.innerHeight,
                 wireframes: false,
-                background: 'transparent'
+                background: 'transparent',
+                pixelRatio: 2
             }
         });
+        
+        // Add bloom class to canvas
+        render.canvas.classList.add('bloom');
 
         // Arrays to track balls and their states
         const balls = [];
-        const ballStates = new Map(); // Track ball states (whole, shattered, healing)
-        let ballIdCounter = 0; // To give each original ball a unique ID
+        const ballStates = new Map();
+        let ballIdCounter = 0;
 
         // Function to create irregular shard vertices
         function createShardVertices() {
@@ -69,7 +98,7 @@
             
             if (shardTypes < 0.3) {
                 // Triangle
-                const size = 15 + Math.random() * 20;
+                const size = 8 + Math.random() * 12; // Smaller shards
                 const angle1 = Math.random() * Math.PI * 2;
                 const angle2 = angle1 + (0.5 + Math.random() * 1) * Math.PI;
                 const angle3 = angle2 + (0.5 + Math.random() * 1) * Math.PI;
@@ -81,7 +110,7 @@
                 ];
             } else if (shardTypes < 0.6) {
                 // Irregular quadrilateral
-                const size = 12 + Math.random() * 18;
+                const size = 6 + Math.random() * 10;
                 vertices = [];
                 for (let j = 0; j < 4; j++) {
                     const angle = (j / 4) * Math.PI * 2 + (Math.random() - 0.5) * 0.8;
@@ -90,7 +119,7 @@
                 }
             } else {
                 // Irregular pentagon
-                const size = 10 + Math.random() * 15;
+                const size = 5 + Math.random() * 8;
                 vertices = [];
                 for (let j = 0; j < 5; j++) {
                     const angle = (j / 5) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
@@ -104,11 +133,11 @@
 
         // Create glass shards in the middle area
         const shards = [];
-        const shardCount = 18;
+        const shardCount = 20;
         const centerY = window.innerHeight / 2;
-        const spreadY = 120;
+        const spreadY = 180; // More vertical spread
         const spreadX = window.innerWidth * 0.7;
-        const placedShards = []; // Track placed shards to avoid overlap
+        const placedShards = [];
 
         for (let i = 0; i < shardCount; i++) {
             let placed = false;
@@ -124,7 +153,7 @@
                 
                 // Check for overlap with existing shards
                 let overlapping = false;
-                const minDistance = 40; // Minimum distance between shard centers
+                const minDistance = 35;
                 
                 for (let placedShard of placedShards) {
                     const distance = Math.sqrt(
@@ -140,10 +169,12 @@
                 if (!overlapping) {
                     const shard = Bodies.fromVertices(x, y, vertices, {
                         isStatic: true,
+                        friction: 0.05, // Very slippery
+                        restitution: 0.8, // Bouncy
                         render: {
-                            fillStyle: 'rgba(200, 220, 255, 0.25)',
-                            strokeStyle: 'rgba(255, 255, 255, 0.9)',
-                            lineWidth: 1
+                            fillStyle: 'rgba(200, 220, 255, 0.4)',
+                            strokeStyle: 'rgba(255, 255, 255, 1)',
+                            lineWidth: 1.5
                         },
                         label: 'shard'
                     });
@@ -155,32 +186,23 @@
             }
         }
 
-        // Create viscous fluid area at the bottom
+        // Create viscous fluid area at the bottom with texture
         const fluidHeight = 150;
         const fluidY = window.innerHeight - fluidHeight / 2;
+        const waterDensity = 0.001; // Water density in kg/m³ (scaled for simulation)
+        
         const fluid = Bodies.rectangle(window.innerWidth / 2, fluidY, window.innerWidth, fluidHeight, {
             isStatic: true,
             isSensor: true,
             render: {
-                fillStyle: 'rgba(100, 150, 200, 0.3)',
+                fillStyle: 'transparent',
                 strokeStyle: 'transparent'
             },
             label: 'fluid'
         });
 
-        // Add visual wave effect for fluid
-        const fluidVisual = Bodies.rectangle(window.innerWidth / 2, fluidY, window.innerWidth, fluidHeight, {
-            isStatic: true,
-            isSensor: true,
-            render: {
-                fillStyle: 'transparent',
-                strokeStyle: 'rgba(150, 200, 255, 0.4)',
-                lineWidth: 2
-            }
-        });
-
         // Add all static bodies to the world
-        World.add(engine.world, [...shards, fluid, fluidVisual]);
+        World.add(engine.world, [...shards, fluid]);
 
         // Create walls
         const walls = [
@@ -193,7 +215,8 @@
 
         // Function to create a colorful ball
         function createBall(x, y) {
-            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#FFD93D', '#6C5CE7'];
+            // More vibrant colors
+            const colors = ['#FF1744', '#00E676', '#00B0FF', '#FF6D00', '#1DE9B6', '#FFEA00', '#D500F9'];
             const color = colors[Math.floor(Math.random() * colors.length)];
             const radius = 8 + Math.random() * 5;
             const ballId = ballIdCounter++;
@@ -201,10 +224,11 @@
             const ball = Bodies.circle(x, y, radius, {
                 restitution: 0.6,
                 friction: 0.3,
-                density: 0.004,
+                density: 0.0008, // Less dense than water for buoyancy
                 render: {
                     fillStyle: color,
-                    strokeStyle: 'transparent'
+                    strokeStyle: color,
+                    lineWidth: 2
                 },
                 label: 'ball'
             });
@@ -238,12 +262,12 @@
                 ballStates.delete(ball.id);
                 
                 // Create fragments
-                const fragmentCount = 3 + Math.floor(Math.random() * 3); // 3-5 fragments
+                const fragmentCount = 3 + Math.floor(Math.random() * 3);
                 const fragmentIds = [];
                 
                 for (let i = 0; i < fragmentCount; i++) {
                     const angle = (Math.PI * 2 * i) / fragmentCount + (Math.random() - 0.5) * 0.5;
-                    const fragmentRadius = radius * (0.3 + Math.random() * 0.3); // 30-60% of original size
+                    const fragmentRadius = radius * (0.3 + Math.random() * 0.3);
                     
                     // Position fragments slightly apart
                     const offsetX = Math.cos(angle) * radius * 0.5;
@@ -263,11 +287,11 @@
                     
                     const fragment = Bodies.fromVertices(pos.x + offsetX, pos.y + offsetY, vertices, {
                         restitution: 0.3,
-                        friction: 0.4,
-                        density: 0.004,
+                        friction: 0.1, // Less friction for fragments
+                        density: 0.0008, // Same density as balls
                         render: {
                             fillStyle: '#666666',
-                            strokeStyle: '#444444',
+                            strokeStyle: '#888888',
                             lineWidth: 1
                         },
                         label: 'fragment'
@@ -295,7 +319,7 @@
                         currentColor: '#666666',
                         state: 'fragment',
                         originalBallId: originalBallId,
-                        siblingFragmentIds: [], // Will be set after all fragments are created
+                        siblingFragmentIds: [],
                         parentRadius: radius,
                         healingProgress: 0
                     });
@@ -331,10 +355,11 @@
                 const currentB = Math.floor(gray + (b - gray) * state.healingProgress);
                 
                 fragment.render.fillStyle = `rgb(${currentR}, ${currentG}, ${currentB})`;
+                fragment.render.strokeStyle = fragment.render.fillStyle;
                 
                 // When healing progresses, apply attraction to sibling fragments
-                if (state.healingProgress > 0.3) { // Start attraction after 30% healed
-                    const attractionStrength = state.healingProgress * 0.000075; // Reduced from 0.00015
+                if (state.healingProgress > 0.3) {
+                    const attractionStrength = state.healingProgress * 0.000075;
                     
                     // Find center of mass of all sibling fragments in fluid
                     let centerX = fragment.position.x;
@@ -360,7 +385,7 @@
                     const dy = centerY - fragment.position.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
                     
-                    if (distance > 5) { // Only attract if not too close
+                    if (distance > 5) {
                         const forceX = (dx / distance) * attractionStrength;
                         const forceY = (dy / distance) * attractionStrength;
                         
@@ -392,7 +417,7 @@
                                     Math.pow(sibling.position.y - fragment.position.y, 2)
                                 );
                                 maxDistance = Math.max(maxDistance, dist);
-                                if (dist > 25) allClose = false; // Reduced from 30 for tighter merging
+                                if (dist > 25) allClose = false;
                             }
                         });
                         
@@ -418,9 +443,8 @@
                             avgVelX /= fragments.length;
                             avgVelY /= fragments.length;
                             
-                            // Create merging effect particles (visual feedback)
+                            // Apply final convergence force
                             fragments.forEach(f => {
-                                // Apply final convergence force
                                 const dx = centerX - f.position.x;
                                 const dy = centerY - f.position.y;
                                 Body.setVelocity(f, {
@@ -442,10 +466,11 @@
                             const ball = Bodies.circle(centerX, centerY, newRadius, {
                                 restitution: 0.6,
                                 friction: 0.3,
-                                density: 0.004,
+                                density: 0.0008,
                                 render: {
                                     fillStyle: state.originalColor,
-                                    strokeStyle: 'transparent'
+                                    strokeStyle: state.originalColor,
+                                    lineWidth: 2
                                 },
                                 label: 'ball'
                             });
@@ -464,7 +489,7 @@
                                 originalBallId: state.originalBallId,
                                 shatterTime: 0,
                                 healingProgress: 0,
-                                fadeStartTime: Date.now() // Start fade timer immediately
+                                fadeStartTime: Date.now()
                             });
                             
                             World.add(engine.world, ball);
@@ -544,42 +569,31 @@
                     // Get ball state
                     const state = ballStates.get(ball.id);
                     
-                    // Calculate depth in fluid
+                    // Calculate physically accurate buoyancy
                     const fluidTop = fluidY - fluidHeight / 2;
-                    const depthInFluid = ball.position.y - fluidTop;
-                    const maxDepth = fluidHeight * 0.8; // Increased max depth for deeper sinking
+                    const ballBottom = ball.position.y + (ball.circleRadius || 10);
+                    const ballTop = ball.position.y - (ball.circleRadius || 10);
                     
-                    // Apply depth-based buoyancy - same for balls and fragments
-                    let buoyancyForce;
-                    if (depthInFluid < 30) {
-                        // Just entered fluid - allow deeper sinking
-                        buoyancyForce = -0.00005; // Reduced from -0.0001
-                    } else if (depthInFluid > maxDepth) {
-                        // Deep in fluid - strong upward force to surface
-                        buoyancyForce = -0.001; // Reduced from -0.002
-                    } else {
-                        // Gradual buoyancy that brings everything to surface
-                        const depthRatio = depthInFluid / maxDepth;
-                        buoyancyForce = -0.0002 - (0.00075 * depthRatio); // Reduced from -0.0004 - (0.0015 * depthRatio)
-                    }
-                    
-                    // For whole balls, ensure they always float to surface
-                    if (state && state.state === 'whole') {
-                        if (depthInFluid > 15) {
-                            // Always apply upward force for whole balls below surface
-                            buoyancyForce = -0.0008;
+                    // Calculate submerged volume (approximation for sphere)
+                    let submergedFraction = 0;
+                    if (ballBottom > fluidTop) {
+                        if (ballTop >= fluidTop) {
+                            // Partially submerged
+                            submergedFraction = (ballBottom - fluidTop) / (2 * (ball.circleRadius || 10));
                         } else {
-                            // Gentle upward force at surface
-                            buoyancyForce = -0.0003;
+                            // Fully submerged
+                            submergedFraction = 1;
                         }
                     }
+                    
+                    // Archimedes' principle: buoyancy = weight of displaced fluid
+                    // Since ball density < water density, balls will float
+                    const buoyancyForce = -waterDensity * submergedFraction * ball.mass * 0.5;
                     
                     Body.applyForce(ball, ball.position, {
                         x: 0,
                         y: buoyancyForce
                     });
-                    
-                    // Remove horizontal drift - keep things calmer
                     
                     // Handle fading for whole balls
                     if (state && state.state === 'whole') {
@@ -590,8 +604,8 @@
                         
                         // Check if it's time to fade
                         const timeInFluid = Date.now() - state.fadeStartTime;
-                        if (timeInFluid > 5000) { // Start fading after 5 seconds
-                            const fadeProgress = Math.min((timeInFluid - 5000) / 1000, 1); // 1 second fade
+                        if (timeInFluid > 5000) {
+                            const fadeProgress = Math.min((timeInFluid - 5000) / 1000, 1);
                             const opacity = 1 - fadeProgress;
                             
                             // Update opacity
@@ -600,6 +614,7 @@
                             const g = parseInt(color.substr(3, 2), 16);
                             const b = parseInt(color.substr(5, 2), 16);
                             ball.render.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+                            ball.render.strokeStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
                             
                             // Remove when fully faded
                             if (fadeProgress >= 1) {
@@ -613,7 +628,7 @@
                     
                     // Heal shattered balls and fragments
                     if (state && state.state === 'fragment') {
-                        healFragment(ball, state.healingProgress + 0.01); // Reduced from 0.02
+                        healFragment(ball, state.healingProgress + 0.01);
                     }
                 }
             });
